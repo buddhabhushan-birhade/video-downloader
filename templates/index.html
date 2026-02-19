@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium Video Downloader</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>Video <span>Downloader</span></h1>
+            <p>Download your favorite videos in high quality</p>
+        </header>
+
+        <main>
+            <div class="glass-card">
+                <div class="input-group">
+                    <input type="text" id="videoUrl" placeholder="Paste video URL here (Youtube, Vimeo, etc.)"
+                        autocomplete="off">
+                    <button id="downloadBtn">
+                        <span class="btn-text">Download</span>
+                        <div class="loader" id="btnLoader"></div>
+                    </button>
+                </div>
+
+                <div id="progressContainer" class="progress-container" style="display: none;">
+                    <div class="progress-bar-bg">
+                        <div id="progressBar" class="progress-bar"></div>
+                    </div>
+                    <div class="progress-stats">
+                        <span id="progressPercent">0%</span>
+                        <span id="downloadSpeed">Waiting...</span>
+                        <span id="downloadEta">ETA: --:--</span>
+                    </div>
+                </div>
+
+                <div id="statusMessage" class="status-message"></div>
+
+                <div id="videoInfo" class="video-info" style="display: none;">
+                    <div class="success-icon">✓</div>
+                    <p id="videoTitle"></p>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>&copy; 2024 Premium Downloader. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script>
+        let eventSource = null;
+
+        document.getElementById('downloadBtn').addEventListener('click', async () => {
+            const url = document.getElementById('videoUrl').value;
+            const statusMessage = document.getElementById('statusMessage');
+            const videoInfo = document.getElementById('videoInfo');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const btnText = downloadBtn.querySelector('.btn-text');
+            const btnLoader = document.getElementById('btnLoader');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const progressPercent = document.getElementById('progressPercent');
+            const downloadSpeed = document.getElementById('downloadSpeed');
+            const downloadEta = document.getElementById('downloadEta');
+
+            if (!url) {
+                showMessage('Please enter a valid URL', 'error');
+                return;
+            }
+
+            // Reset UI
+            statusMessage.style.display = 'none';
+            videoInfo.style.display = 'none';
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '0%';
+            progressPercent.textContent = '0%';
+            downloadSpeed.textContent = 'Initializing...';
+            downloadEta.textContent = 'ETA: --:--';
+
+            downloadBtn.disabled = true;
+            btnText.style.opacity = '0';
+            btnLoader.style.display = 'block';
+
+            try {
+                // First, start the download request
+                const response = await fetch('/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showMessage(data.error || 'Failed to start download', 'error');
+                    resetBtn();
+                    progressContainer.style.display = 'none';
+                    return;
+                }
+
+                // If started successfully, open EventSource for progress
+                if (eventSource) eventSource.close();
+                eventSource = new EventSource('/progress');
+
+                eventSource.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    const progress = data.progress;
+                    const status = data.status;
+                    const error = data.error;
+
+                    if (error) {
+                        showMessage(error, 'error');
+                        eventSource.close();
+                        resetBtn();
+                        return;
+                    }
+
+                    progressBar.style.width = `${progress}%`;
+                    progressPercent.textContent = `${progress}%`;
+                    downloadSpeed.textContent = `Speed: ${data.speed}`;
+                    downloadEta.textContent = `ETA: ${data.eta}`;
+
+                    if (status === 'finished' && progress === '100') {
+                        eventSource.close();
+                        const downloadUrl = `/get-video/${encodeURIComponent(data.filename)}`;
+                        showMessage(`Download completed successfully! <a href="${downloadUrl}" class="download-now-link" download>Click here to download to your device</a>`, 'success');
+                        videoInfo.style.display = 'flex';
+                        resetBtn();
+                    }
+                };
+
+                eventSource.onerror = () => {
+                    console.error("EventSource failed.");
+                    eventSource.close();
+                };
+
+            } catch (error) {
+                showMessage('An unexpected error occurred', 'error');
+                resetBtn();
+            }
+        });
+
+        function resetBtn() {
+            const downloadBtn = document.getElementById('downloadBtn');
+            const btnText = downloadBtn.querySelector('.btn-text');
+            const btnLoader = document.getElementById('btnLoader');
+            downloadBtn.disabled = false;
+            btnText.style.opacity = '1';
+            btnLoader.style.display = 'none';
+        }
+
+        function showMessage(text, type) {
+            const statusMessage = document.getElementById('statusMessage');
+            statusMessage.textContent = text;
+            statusMessage.className = `status-message ${type}`;
+            statusMessage.style.display = 'block';
+
+            statusMessage.style.transform = 'translateY(10px)';
+            setTimeout(() => {
+                statusMessage.style.transform = 'translateY(0)';
+            }, 10);
+        }
+    </script>
+</body>
+
+</html>
